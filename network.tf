@@ -50,6 +50,7 @@ resource "aws_internet_gateway" "terraform-internet-gateway" {
   tags = {
     Name = "terraform-internet-gateway"
   }
+  depends_on = [aws_instance.ec2]
 }
 
 resource "aws_route_table_association" "subnet1_route_table_association" {

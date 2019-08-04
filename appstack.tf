@@ -13,7 +13,7 @@ data "aws_ami" "centos" {
 
 resource "aws_security_group" "web_security_group" {
   name = "web_security_group"
-  description = "security group of RDS instance"
+  description = "security group of EC2 instance"
   ingress {
     from_port = 443
     protocol = "tcp"
@@ -38,6 +38,12 @@ resource "aws_security_group" "web_security_group" {
     to_port = 22
     cidr_blocks = ["0.0.0.0/0"]
   }
+  egress {
+    from_port = 0
+    protocol = "-1"
+    to_port = 0
+    cidr_blocks = ["0.0.0.0/0"]
+  }
   vpc_id = aws_vpc.terraform-vpc.id
 }
 
@@ -51,11 +57,12 @@ resource "aws_security_group" "db_security_group" {
   }
   vpc_id = aws_vpc.terraform-vpc.id
 }
+
 resource "aws_instance" "ec2" {
   ami = data.aws_ami.centos.image_id
   instance_type = "t2.micro"
   tags = {
-    name = "terra-ec2"
+    Name = "terra-ec2"
   }
   subnet_id = aws_subnet.subnet1.id
   key_name = var.key_name
@@ -65,8 +72,9 @@ resource "aws_instance" "ec2" {
     delete_on_termination = true
     volume_size = 20
   }
+  iam_instance_profile = aws_iam_instance_profile.terra_ec2_instance_profile.name
   associate_public_ip_address = true
-  security_groups = [aws_security_group.web_security_group.id]
+  vpc_security_group_ids = [aws_security_group.web_security_group.id]
   depends_on = [aws_db_instance.terra_rds]
 }
 
@@ -87,4 +95,44 @@ resource "aws_db_subnet_group" "terra_db_subnet_group" {
   subnet_ids = [aws_subnet.subnet2.id,aws_subnet.subnet3.id]
   name = "db_subnet_group"
   description = "subnetgroup for database"
+}
+
+resource "aws_dynamodb_table" "dynamoDb" {
+  hash_key = "email"
+  name = "terra-csy6225"
+  attribute {
+    name = "email"
+    type = "S"
+  }
+  ttl {
+    attribute_name = "TimeToLive"
+    enabled = true
+  }
+  read_capacity = 5
+  write_capacity = 5
+}
+
+resource "aws_codedeploy_app" "code_deploy_application" {
+  name = "csye6225-terra"
+  compute_platform = "Server"
+}
+
+resource "aws_codedeploy_deployment_group" "code_deploy_deployment_group" {
+  app_name = aws_codedeploy_app.code_deploy_application.name
+  deployment_group_name = "csye6225-webapp-deployment-terra"
+  service_role_arn = aws_iam_role.code_deploy_service_role.arn
+  auto_rollback_configuration {
+    enabled = true
+    events = ["DEPLOYMENT_FAILURE"]
+  }
+  deployment_config_name = "CodeDeployDefault.AllAtOnce"
+  deployment_style {
+    deployment_option = "WITHOUT_TRAFFIC_CONTROL"
+    deployment_type = "IN_PLACE"
+  }
+  ec2_tag_filter {
+    type = "KEY_AND_VALUE"
+    key = "Name"
+    value = "terra-ec2"
+  }
 }
